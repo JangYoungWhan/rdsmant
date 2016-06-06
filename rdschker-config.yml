@@ -1,0 +1,33 @@
+# Project   : Configuration of rdschker.py
+# Author    : YW. Jang
+# Date      : 2016.05.03
+#
+# Copyright 2016, YW. Jang, All rights reserved.
+
+dao:
+  -
+    host: tb-master.XXXXXXX.us-west-1.rds.amazonaws.com
+    port: 3306
+    region: us-west-1
+    user: root
+    password: ###
+  -
+    host: tb-slave.XXXXXXX.us-west-1.rds.amazonaws.com
+    port: 3306
+    region: us-west-1
+    user: root
+    password: ###
+
+condition:
+  interval: 15
+  duration: 300
+
+output:
+  path: ./rds-status/
+
+logger:
+  path: ./log/
+  filename: rdschker.log
+  encoding: utf-8
+  maxbytes: 268435456 # 256MB
+  backupcount: 2

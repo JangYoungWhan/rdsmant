@@ -1,0 +1,135 @@
+# Project   : Threshold table for rdschker.py
+# Author    : YW. Jang
+# Date      : 2016.05.03
+#
+# Copyright 2016, YW. Jang, All rights reserved.
+
+default:
+  -
+    type: CPU
+    warning: 60
+    critical: 100
+  -
+    type: DBC
+    warning: 800
+    critical: 1600
+  -
+    type: REPLAG
+    warning: 10000
+    critical: 20000
+  -
+    type: BINLOG
+    warning: 1000
+    critical: 2000
+  -
+    type: QDEP
+    warning: 20
+    critical: 40
+  -
+    type: READLAT
+    warning: 100
+    critical: 200
+  -
+    type: WRITELAT
+    warning: 100
+    critical: 200
+  -
+    type: FREESTORAGE
+    warning: 20
+    critical: 10
+  -
+    type: FREEMEM
+    warning: 20
+    critical: 10
+  -
+    type: TOTALIOPS
+    warning: 8000
+    critical: 16000
+  -
+    type: READIOPS
+    warning: 4000
+    critical: 8000
+  -
+    type: WRITEIOPS
+    warning: 4000
+    critical: 8000
+  -
+    type: NETRECEIVE
+    warning: 100
+    critical: 200
+  -
+    type: NETRANS
+    warning: 100
+    critical: 200
+
+tb-master:
+  -
+    type: CPU
+    warning: 55
+    critical: 85
+  -
+    type: DBC
+    warning: 300
+    critical: 600
+  -
+    type: BINLOG
+    warning: 400
+    critical: 800
+  -
+    type: QDEP
+    warning: 10
+    critical: 20
+  -
+    type: READLAT
+    warning: 10
+    critical: 20
+  -
+    type: WRITELAT
+    warning: 10
+    critical: 20
+  -
+    type: READIOPS
+    warning: 2000
+    critical: 4000
+  -
+    type: WRITEIOPS
+    warning: 2000
+    critical: 4000
+
+tb-slave:
+  -
+    type: CPU
+    warning: 60
+    critical: 80
+  -
+    type: DBC
+    warning: 1000
+    critical: 2000
+  -
+    type: REPLAG
+    warning: 9000
+    critical: 18000
+  -
+    type: BINLOG
+    warning: 200
+    critical: 400
+  -
+    type: QDEP
+    warning: 45
+    critical: 90
+  -
+    type: READLAT
+    warning: 300
+    critical: 600
+  -
+    type: WRITELAT
+    warning: 300
+    critical: 600
+  -
+    type: READIOPS
+    warning: 3000
+    critical: 6000
+  -
+    type: WRITEIOPS
+    warning: 1500
+    critical: 3000
