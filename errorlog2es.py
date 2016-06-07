@@ -17,19 +17,20 @@ from botocore.auth import SigV4Auth
 from botocore.endpoint import PreserveAuthSession
 from botocore.credentials import Credentials
 
-# Elasticsearch host name
+# Elasticsearch host name and default region.
 ES_HOST = "192.168.0.1:4040"
+ES_DEFAULT_REGION = "us-west-1"
 
-# Elasticsearch prefix for index name
+# Elasticsearch prefix for index name.
 INDEX_PREFIX = "errorlog"
 
-# Elasticsearch type name is rds instance id
+# Elasticsearch type name is rds instance id.
 RDS_ID = "tb-master"
 
-# Enabled to change timezone.  If you set UTC, this parameter is blank
+# Enabled to change timezone.  If you set UTC, this parameter is blank.
 TIMEZONE = "Asia/Seoul"
 
-# Query time format regex
+# Query time format regex.
 TIME_REGEX = "^[a-zA-Z#:_ ]+([0-9.]+)[a-zA-Z:_ ]+([0-9.]+)[a-zA-Z:_ ]+([0-9.]+).[a-zA-Z:_ ]+([0-9.]+)$"
 
 R = re.compile(TIME_REGEX)
@@ -55,21 +56,16 @@ REG_ROLLBACK_TR = re.compile("\*\*\* WE ROLL BACK TRANSACTION \((\d+)\)")
 REG_HOLD_USER_INFO = re.compile("MySQL thread id (\w+), OS thread handle \w+, query id (\d+) ([\d\.]+) (\w+) ")
 REG_HOLD_LOCK_INFO = re.compile("table `(\w+)`\.`(\w+)` trx id (\d+) lock_mode (\w+)")
 
+# RDS region which you want to crawling error log.
+AWS_RDS_REGION_ID = "us-west-1"
 
+# If you have ec2 instances, then It need region and VPC involving instances.
+AWS_EC2_REGION_ID = "us-west-1"
+AWS_EC2_VPC_ID = "vpc-xxxxx"
 
-def getEC2InstancesInVpc(region, vpc):
-  ec2list = dict()
-
-  ec2 = boto3.resource("ec2", region_name=region)
-  vpc = ec2.Vpc(vpc)
-  for i in vpc.instances.all():
-    for tag in i.tags:
-      if tag['Key'] == 'Name':
-        ec2list[i.private_ip_address] = "".join(tag['Value'].split())
-  return ec2list
 
 def lambda_handler():#(event, context):
-  client = boto3.client("rds")
+  client = boto3.client("rds", region_name=AWS_RDS_REGION_ID)
   db_files = client.describe_db_log_files(DBInstanceIdentifier=RDS_ID)
 
   log_filename = ERRORLOG_PREFIX + str(datetime.utcnow().hour)
@@ -79,8 +75,7 @@ def lambda_handler():#(event, context):
   body = client.download_db_log_file_portion(DBInstanceIdentifier=RDS_ID,
     LogFileName=log_filename)["LogFileData"]
 
-  ec2list = getEC2InstancesInVpc("us-west-1", "vpc-XXXXX")
-  #_create_index(ES_HOST)
+  ec2list = getEC2InstancesInVpc(AWS_REGION_ID, AWS_VPC_ID)
 
   data = ""
   doc = {}
@@ -116,7 +111,11 @@ def lambda_handler():#(event, context):
         doc["db"] = match.group(1)
         doc["user"] = match.group(2)
         doc["host"] = match.group(3)
-        ec2list["name"] = ec2list[match.group(3)]
+        ip_addr = match.group(3)
+        if ip_addr not in ec2list:
+          doc["name"] = "Missed"
+        else:
+          doc["name"] = ec2list[ip_addr]
       elif ACCESS_DENY_MSG in message:
         doc["detail"] = ACCESS_DENY_MSG
         match = REG_ACCESS_DENY.search(message)
@@ -190,22 +189,12 @@ def lambda_handler():#(event, context):
     data += json.dumps(doc) + "\n"
     _bulk(ES_HOST, data)
 
-def _create_index(host):
-  d = dict()
-  d["template"] = "rds_errorlog-*"
-  d["mappings"] = dict()
-  d["mappings"][RDS_ID] = dict()
-  d["mappings"][RDS_ID]["properties"] = dict()
-  d["mappings"][RDS_ID]["properties"]["query_time"] = {"type": "float", "index": "not_analyzed"}
-  d["mappings"][RDS_ID]["properties"]["lock_time"] = {"type": "float", "index": "not_analyzed"}
-  d["mappings"][RDS_ID]["properties"]["rows_sent"] = {"type": "integer", "index": "not_analyzed"}
-  d["mappings"][RDS_ID]["properties"]["rows_examined"] = {"type": "integer", "index": "not_analyzed"}
-
   credentials = _get_credentials()
   url = _create_url(host, "/_template/rds_errorlog?ignore_conflicts=true")
   response = es_request(url, "PUT", credentials, data=json.dumps(d))
   if not response.ok:
     print(response.text)
+
 
 def _bulk(host, doc):
   credentials = _get_credentials()
@@ -214,13 +203,12 @@ def _bulk(host, doc):
   if not response.ok:
     print(response.text)
 
+
 def _get_credentials():
   return Credentials(
-    "XXXXX",
-    "YYYYY")
-    #os.environ["AWS_ACCESS_KEY_ID"],
-    #os.environ["AWS_SECRET_ACCESS_KEY"],
-    #os.environ["AWS_SESSION_TOKEN"])
+    os.environ["AWS_ACCESS_KEY_ID"],
+    os.environ["AWS_SECRET_ACCESS_KEY"],
+    os.environ["AWS_SESSION_TOKEN"])
 
 
 def _create_url(host, path, ssl=False):
@@ -233,6 +221,18 @@ def _create_url(host, path, ssl=False):
     return "http://" + host + path
 
 
+def getEC2InstancesInVpc(region, vpc):
+  ec2list = dict()
+
+  ec2 = boto3.resource("ec2", region_name=region)
+  vpc = ec2.Vpc(vpc)
+  for i in vpc.instances.all():
+    for tag in i.tags:
+      if tag['Key'] == 'Name':
+        ec2list[i.private_ip_address] = "".join(tag['Value'].split())
+  return ec2list
+
+
 def request(url, method, credentials, service_name, region=None, headers=None, data=None):
   if not region:
     region = os.environ["AWS_REGION"]
@@ -242,7 +242,7 @@ def request(url, method, credentials, service_name, region=None, headers=None, d
   return PreserveAuthSession().send(aws_request.prepare())
 
 
-def es_request(url, method, credentials, region=None, headers=None, data=None):
+def es_request(url, method, credentials, region=ES_DEFAULT_REGION, headers=None, data=None):
   return request(url, method, credentials, "es", region, headers, data)
 
 lambda_handler()

@@ -18,19 +18,20 @@ from botocore.auth import SigV4Auth
 from botocore.endpoint import PreserveAuthSession
 from botocore.credentials import Credentials
 
-# Elasticsearch host name
+# Elasticsearch host name and default region.
 ES_HOST = "192.168.0.1:4040"
+ES_DEFAULT_REGION = "us-west-1"
 
-# Elasticsearch prefix for index name
+# Elasticsearch prefix for index name.
 INDEX_PREFIX = "rds_slowquerylog"
 
-# Elasticsearch type name is rds instance id
+# Elasticsearch type name is rds instance id.
 RDS_ID = "tb-master"
 
-# Enabled to change timezone. If you set UTC, this parameter is blank
+# Enabled to change timezone. If you set UTC, this parameter is blank.
 TIMEZONE = "Asia/Seoul"
 
-# Query time format regex
+# Query time format regex.
 TIME_REGEX = "^[a-zA-Z#:_ ]+([0-9.]+)[a-zA-Z:_ ]+([0-9.]+)[a-zA-Z:_ ]+([0-9.]+).[a-zA-Z:_ ]+([0-9.]+)$"
 
 # Exclude noise string
@@ -46,8 +47,16 @@ INDEX = INDEX_PREFIX + "-" + datetime.strftime(NOW, "%Y.%m.%d")
 TYPE = RDS_ID
 SLOWQUERYLOG_PREFIX = "slowquery/mysql-slowquery.log."
 
+# RDS region which you want to crawling error log.
+AWS_RDS_REGION_ID = "us-west-1"
+
+# If you have ec2 instances, then It need region and VPC involving instances.
+AWS_EC2_REGION_ID = "us-west-1"
+AWS_EC2_VPC_ID = "vpc-xxxxx"
+
+
 def lambda_handler():#(event, context):
-  client = boto3.client("rds", region_name="us-west-1")
+  client = boto3.client("rds", region_name=AWS_RDS_REGION_ID)
   db_files = client.describe_db_log_files(DBInstanceIdentifier=RDS_ID)
 
   log_filename = SLOWQUERYLOG_PREFIX + str(datetime.utcnow().hour)
@@ -60,6 +69,8 @@ def lambda_handler():#(event, context):
   )["LogFileData"]
 
   _create_index(ES_HOST)
+  
+  ec2list = getEC2InstancesInVpc(AWS_REGION_ID, AWS_VPC_ID)
 
   data = ""
   doc = {}
@@ -83,6 +94,11 @@ def lambda_handler():#(event, context):
       doc["user"] = line.split("[")[1].split("]")[0]
       doc["client"] = line.split("[")[2].split("]")[0]
       doc["client_id"] = line.split(" Id: ")[1]
+      ip_addr = doc["client"]
+        if ip_addr not in ec2list:
+          doc["name"] = "Missed"
+        else:
+          doc["name"] = ec2list[ip_addr]
     elif line.startswith("# Query_time: "):
       match = R.match(line).groups(0)
       doc["query_time"] = match[0]
@@ -109,6 +125,7 @@ def _bulk(host, doc):
   response = es_request(url, "POST", credentials, data=doc)
   if not response.ok:
     print(response.text)
+    
 
 def _create_index(host):
   d = dict()
@@ -126,22 +143,37 @@ def _create_index(host):
   response = es_request(url, "PUT", credentials, data=json.dumps(d))
   if not response.ok:
     print(response.text)
-
+    
+    
+def _clean_fingerprint(s):
+  SET_TIMESTAMP = "set timestamp=?;\n\n"
+  USE_DATABASE = "use ?\n\n"
+  
+  if SET_TIMESTAMP in s:
+    s = s.replace(SET_TIMESTAMP, "")
+  if USE_DATABASE in s:
+    s = s.replace(USE_DATABASE, "")
+    
+  # Substitue multiple line feed to single line feed.
+  s = re.sub(r"(\n)+", r"\n", s)
+  
+  return s
+  
+  
 def _get_fingerprint(sql):
   cmd = "pt-fingerprint --query '%s'" % sql
 
   try:
-    return subprocess.check_output(cmd, shell=True)
+    return _clean_fingerprint(subprocess.check_output(cmd, shell=True))
   except:
     return sql
 
+
 def _get_credentials():
   return Credentials(
-     "XXXXX",
-     "YYYYY")
-#    os.environ["AWS_ACCESS_KEY_ID"],
-#    os.environ["AWS_SECRET_ACCESS_KEY"],
-#    os.environ["AWS_SESSION_TOKEN"])
+    os.environ["AWS_ACCESS_KEY_ID"],
+    os.environ["AWS_SECRET_ACCESS_KEY"],
+    os.environ["AWS_SESSION_TOKEN"])
 
 
 def _create_url(host, path, ssl=False):
@@ -152,18 +184,30 @@ def _create_url(host, path, ssl=False):
     return "https://" + host + path
   else:
     return "http://" + host + path
+    
+    
+def getEC2InstancesInVpc(region, vpc):
+  ec2list = dict()
+
+  ec2 = boto3.resource("ec2", region_name=region)
+  vpc = ec2.Vpc(vpc)
+  for i in vpc.instances.all():
+    for tag in i.tags:
+      if tag['Key'] == 'Name':
+        ec2list[i.private_ip_address] = "".join(tag['Value'].split())
+  return ec2list
 
 
 def request(url, method, credentials, service_name, region=None, headers=None, data=None):
   if not region:
-    region = "us-west-1"#os.environ[]
+    region = os.environ["AWS_REGION"]
 
   aws_request = AWSRequest(url=url, method=method, headers=headers, data=data)
   SigV4Auth(credentials, service_name, region).add_auth(aws_request)
   return PreserveAuthSession().send(aws_request.prepare())
 
 
-def es_request(url, method, credentials, region=None, headers=None, data=None):
+def es_request(url, method, credentials, region=ES_DEFAULT_REGION, headers=None, data=None):
   return request(url, method, credentials, "es", region, headers, data)
 
 lambda_handler()
