@@ -11,12 +11,12 @@ dao:
     region: us-west-1
     user: root
     password: ###
-  -
-    host: tb-slave.XXXXXXX.us-west-1.rds.amazonaws.com
-    port: 3306
-    region: us-west-1
-    user: root
-    password: ###
+#  -
+#    host: tb-slave.XXXXXXX.us-west-1.rds.amazonaws.com
+#    port: 3306
+#    region: us-west-1
+#    user: root
+#    password: ###
 
 condition:
   interval: 15

@@ -4,6 +4,21 @@
 #
 # Copyright 2016, YW. Jang, All rights reserved.
 
+# CPU (CPU Utilization)
+# DBC (DB Connection)
+# REPLAG (Replica Lag)
+# BINLOG (Binary Log Disk Usage)
+# QDEP (Queue Depth)
+# READLAT (Read Latency)
+# WRITELAT (Write Latency)
+# FREESTORAGE (Free Storage Space)
+# FREEMEM (Freeable Memory)
+# TOTALIOPS (Read Operations + Write Operations)
+# READOPS (Read Operations)
+# WRITEOPS (Write Operations)
+# NETRECEIVE (Network Receive Throughput)
+# NETRANS (Network Transmit Throughput)
+
 default:
   -
     type: CPU
