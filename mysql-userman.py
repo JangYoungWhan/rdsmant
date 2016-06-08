@@ -101,7 +101,7 @@ def usage():
   print("Addional option :")
   print("\t--db [DatabaseName] : default is test")
   print("\t--region [us-west-1 or us-west-2] : default is us-west-1")
-  print("\t--type [add or del] : default is add(GRANT)")
+  print("\t--priv [add or del] : default is add(GRANT)")
   print("ex1) python mysql-usrman.py --table helloworld --user web")
   print("ex2) python mysql-usrman.py --table helloworld --user was --region us-west-2")
   print("ex3) python mysql-usrman.py --table helloworld --servic was --priv del")
