@@ -70,7 +70,7 @@ def lambda_handler():#(event, context):
 
   _create_index(ES_HOST)
   
-  ec2list = getEC2InstancesInVpc(AWS_REGION_ID, AWS_VPC_ID)
+  ec2list = getEC2InstancesInVpc(AWS_EC2_REGION_ID, AWS_EC2_VPC_ID)
 
   data = ""
   doc = {}
@@ -81,8 +81,10 @@ def lambda_handler():#(event, context):
     elif line.startswith("# Time: "):
       if doc:
         data += '{"index":{"_index":"' + INDEX + '","_type":"' + TYPE + '"}}\n'
+        doc["fingerprint"] = _clean_fingerprint(doc["fingerprint"])
         data += json.dumps(doc) + "\n"
       if len(data) > 1000000:
+        data = _remove_dup_lf(data)
         _bulk(ES_HOST, data)
         data = ""
 
@@ -95,10 +97,10 @@ def lambda_handler():#(event, context):
       doc["client"] = line.split("[")[2].split("]")[0]
       doc["client_id"] = line.split(" Id: ")[1]
       ip_addr = doc["client"]
-        if ip_addr not in ec2list:
-          doc["name"] = "Missed"
-        else:
-          doc["name"] = ec2list[ip_addr]
+      if ip_addr not in ec2list:
+        doc["name"] = "Missed"
+      else:
+        doc["name"] = ec2list[ip_addr]
     elif line.startswith("# Query_time: "):
       match = R.match(line).groups(0)
       doc["query_time"] = match[0]
@@ -115,6 +117,7 @@ def lambda_handler():#(event, context):
 
   if doc:
     data += '{"index":{"_index":"' + INDEX + '","_type":"' + TYPE + '"}}\n'
+    doc["fingerprint"] = _remove_dup_lf(doc["fingerprint"])
     data += json.dumps(doc) + "\n"
     _bulk(ES_HOST, data)
 
@@ -143,28 +146,34 @@ def _create_index(host):
   response = es_request(url, "PUT", credentials, data=json.dumps(d))
   if not response.ok:
     print(response.text)
-    
-    
-def _clean_fingerprint(s):
-  SET_TIMESTAMP = "set timestamp=?;\n\n"
-  USE_DATABASE = "use ?\n\n"
   
-  if SET_TIMESTAMP in s:
-    s = s.replace(SET_TIMESTAMP, "")
-  if USE_DATABASE in s:
-    s = s.replace(USE_DATABASE, "")
-    
+  
+def _skip_fingerprint(s):
+  SET_TIMESTAMP = "set timestamp="
+  USE_DATABASE = "use "
+
+  if s.startswith(SET_TIMESTAMP):
+    return ""
+  elif s.startswith(USE_DATABASE):
+    return ""
+  else:
+    # Substitue multiple line feed to single line feed.
+    s = re.sub(r"(\n)+", r"\n", s)
+    return s
+
+
+def _remove_dup_lf(s):
+  stripped = s.strip()
   # Substitue multiple line feed to single line feed.
-  s = re.sub(r"(\n)+", r"\n", s)
-  
-  return s
+  stripped = re.sub(r"(\n)+", r"\n", stripped)
+  return stripped
   
   
 def _get_fingerprint(sql):
   cmd = "pt-fingerprint --query '%s'" % sql
 
   try:
-    return _clean_fingerprint(subprocess.check_output(cmd, shell=True))
+    return _skip_fingerprint(subprocess.check_output(cmd, shell=True))
   except:
     return sql
 
