@@ -35,7 +35,7 @@ TIME_REGEX = "^[a-zA-Z#:_ ]+([0-9.]+)[a-zA-Z:_ ]+([0-9.]+)[a-zA-Z:_ ]+([0-9.]+).
 
 R = re.compile(TIME_REGEX)
 NOW = datetime.now()
-INDEX = INDEX_PREFIX + "-" + datetime.strftime(NOW, "%Y%m%d")
+INDEX = INDEX_PREFIX + "-" + datetime.strftime(NOW, "%Y.%m")
 TYPE = RDS_ID
 ERRORLOG_PREFIX = "error/mysql-error-running.log."
 
@@ -76,6 +76,7 @@ def lambda_handler():#(event, context):
     LogFileName=log_filename)["LogFileData"]
 
   ec2list = getEC2InstancesInVpc(AWS_REGION_ID, AWS_VPC_ID)
+  _create_index(ES_HOST)
 
   data = ""
   doc = {}
@@ -195,6 +196,13 @@ def lambda_handler():#(event, context):
   if not response.ok:
     print(response.text)
 
+
+def _create_index(host):
+  d = dict()
+  d["template"] = "rds_errorlog-*"
+  d["settings"] = dict()
+  d["settings"]["number_of_shards"] = 1
+  
 
 def _bulk(host, doc):
   credentials = _get_credentials()

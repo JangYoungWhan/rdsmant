@@ -43,7 +43,7 @@ NOISE = [
 
 R = re.compile(TIME_REGEX)
 NOW = datetime.now()
-INDEX = INDEX_PREFIX + "-" + datetime.strftime(NOW, "%Y.%m.%d")
+INDEX = INDEX_PREFIX + "-" + datetime.strftime(NOW, "%Y.%m")
 TYPE = RDS_ID
 SLOWQUERYLOG_PREFIX = "slowquery/mysql-slowquery.log."
 
@@ -133,6 +133,8 @@ def _bulk(host, doc):
 def _create_index(host):
   d = dict()
   d["template"] = "rds_slowquerylog-*"
+  d["settings"] = dict()
+  d["settings"]["number_of_shards"] = 1
   d["mappings"] = dict()
   d["mappings"][RDS_ID] = dict()
   d["mappings"][RDS_ID]["properties"] = dict()
