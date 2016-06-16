@@ -214,6 +214,11 @@ def _bulk(host, doc):
   response = es_request(url, "POST", credentials, data=doc)
   if not response.ok:
     print(response.text)
+    print("Request is failed")
+    return False
+    
+  print("Request is sent successfully")
+  return True
 
 
 def _get_credentials():
