@@ -70,7 +70,9 @@ def lambda_handler():#(event, context):
 
   log_filename = ERRORLOG_PREFIX + str(datetime.utcnow().hour)
   if not filter(lambda log: log["LogFileName"] == log_filename, db_files["DescribeDBLogFiles"]):
+    print("%s does not exist!" % (log_filename))
     return
+  print("%s : Write %s in %s" % (str(datetime.now()), log_filename, INDEX))
 
   body = client.download_db_log_file_portion(DBInstanceIdentifier=RDS_ID,
     LogFileName=log_filename)["LogFileData"]
@@ -92,8 +94,9 @@ def lambda_handler():#(event, context):
     if doc:
       data += '{"index":{"_index":"' + INDEX + '","_type":"' + TYPE + '"}}\n'
       data += json.dumps(doc) + "\n"
-    if len(data) > 1000000:
+    if len(data) > 100000:
       _bulk(ES_HOST, data)
+      print("%s : Write data that length is %s" % (str(datetime.now()), len(data)))
       data = ""
 
     doc = {}
@@ -189,6 +192,7 @@ def lambda_handler():#(event, context):
     data += '{"index":{"_index":"' + INDEX + '","_type":"' + TYPE + '"}}\n'
     data += json.dumps(doc) + "\n"
     _bulk(ES_HOST, data)
+    print("%s : Write last data that length is %s" % (str(datetime.now()), len(data)))
 
   credentials = _get_credentials()
   url = _create_url(host, "/_template/rds_errorlog?ignore_conflicts=true")

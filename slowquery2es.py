@@ -61,8 +61,10 @@ def lambda_handler():#(event, context):
 
   log_filename = SLOWQUERYLOG_PREFIX + str(datetime.utcnow().hour)
   if not filter(lambda log: log["LogFileName"] == log_filename, db_files["DescribeDBLogFiles"]):
+    print("%s does not exist!" % (log_filename))
     return
-
+  print("%s : Write %s in %s" % (str(datetime.now()), log_filename, INDEX))
+  
   body = client.download_db_log_file_portion(
     DBInstanceIdentifier=RDS_ID,
     LogFileName=log_filename
@@ -83,9 +85,10 @@ def lambda_handler():#(event, context):
         data += '{"index":{"_index":"' + INDEX + '","_type":"' + TYPE + '"}}\n'
         doc["fingerprint"] = _clean_fingerprint(doc["fingerprint"])
         data += json.dumps(doc) + "\n"
-      if len(data) > 1000000:
+      if len(data) > 100000:
         data = _remove_dup_lf(data)
         _bulk(ES_HOST, data)
+        print("%s : Write data that length is %s" % (str(datetime.now()), len(data)))
         data = ""
 
       timestamp = datetime.strptime(line[8:], "%y%m%d %H:%M:%S")
@@ -120,6 +123,7 @@ def lambda_handler():#(event, context):
     doc["fingerprint"] = _remove_dup_lf(doc["fingerprint"])
     data += json.dumps(doc) + "\n"
     _bulk(ES_HOST, data)
+    print("%s : Write last data that length is %s" % (str(datetime.now()), len(data)))
 
 
 def _bulk(host, doc):
