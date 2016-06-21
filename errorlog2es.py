@@ -11,6 +11,7 @@ import re
 import os
 import json
 from datetime import datetime
+from datetime import timedelta
 from dateutil import tz, zoneinfo
 from botocore.awsrequest import AWSRequest
 from botocore.auth import SigV4Auth
@@ -72,19 +73,28 @@ def lambda_handler():#(event, context):
   if not filter(lambda log: log["LogFileName"] == log_filename, db_files["DescribeDBLogFiles"]):
     print("%s does not exist!" % (log_filename))
     return
-  print("%s : Write %s in %s" % (str(datetime.now()), log_filename, INDEX))
 
   body = client.download_db_log_file_portion(DBInstanceIdentifier=RDS_ID,
     LogFileName=log_filename)["LogFileData"]
-
-  ec2list = getEC2InstancesInVpc(AWS_REGION_ID, AWS_VPC_ID)
-  _create_index(ES_HOST)
 
   data = ""
   doc = {}
 
   lines = body.split("\n")
+  if len(lines) > 0:
+    if not _validate_log_date(NOW, lines[0]):
+      print("%s already read log!" % (log_filename))
+      return
+  else:
+    print("%s is empty!" % (log_filename))
+    return
+  
+  # Get ready for extracting log file.
   i = 0
+  ec2list = getEC2InstancesInVpc(AWS_EC2_REGION_ID, AWS_EC2_VPC_ID)
+  _create_index(ES_HOST)
+  print("%s : Write %s in %s" % (str(datetime.now()), log_filename, INDEX))
+  
   while i < len(lines):
     line = lines[i]
     if not line:
@@ -199,7 +209,24 @@ def lambda_handler():#(event, context):
   response = es_request(url, "PUT", credentials, data=json.dumps(d))
   if not response.ok:
     print(response.text)
-
+    
+    
+def _validate_log_date(now, line):
+  delta = timedelta(hours=2)
+  
+  m = REG_GENERAL_ERR.match(line)
+  if m:
+    log_time = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
+    if (now - log_time) > delta:
+      return False
+  elif BEGIN_DEADLOCK in line:
+    m = REG_DEADLOCK.match(lines[i])
+    log_time = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
+    if (now - log_time) < delta:
+      return False
+      
+  return True
+  
 
 def _create_index(host):
   d = dict()
@@ -250,6 +277,10 @@ def getEC2InstancesInVpc(region, vpc):
   return ec2list
 
 
+def es_request(url, method, credentials, region=ES_DEFAULT_REGION, headers=None, data=None):
+  return request(url, method, credentials, "es", region, headers, data)
+  
+
 def request(url, method, credentials, service_name, region=None, headers=None, data=None):
   if not region:
     region = os.environ["AWS_REGION"]
@@ -258,8 +289,5 @@ def request(url, method, credentials, service_name, region=None, headers=None, d
   SigV4Auth(credentials, service_name, region).add_auth(aws_request)
   return PreserveAuthSession().send(aws_request.prepare())
 
-
-def es_request(url, method, credentials, region=ES_DEFAULT_REGION, headers=None, data=None):
-  return request(url, method, credentials, "es", region, headers, data)
 
 lambda_handler()

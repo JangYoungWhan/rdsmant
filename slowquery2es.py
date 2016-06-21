@@ -12,6 +12,7 @@ import os
 import json
 import subprocess
 from datetime import datetime
+from datetime import timedelta
 from dateutil import tz, zoneinfo
 from botocore.awsrequest import AWSRequest
 from botocore.auth import SigV4Auth
@@ -69,14 +70,24 @@ def lambda_handler():#(event, context):
     DBInstanceIdentifier=RDS_ID,
     LogFileName=log_filename
   )["LogFileData"]
-
-  _create_index(ES_HOST)
   
-  ec2list = getEC2InstancesInVpc(AWS_EC2_REGION_ID, AWS_EC2_VPC_ID)
-
   data = ""
   doc = {}
 
+  lines = body.split("\n")
+  if len(lines) > 0:
+    if not _validate_log_date(NOW, lines):
+      print("%s already read log!" % (log_filename))
+      return
+  else:
+    print("%s is empty!" % (log_filename))
+    return
+    
+  # Get ready for extracting log file.
+  ec2list = getEC2InstancesInVpc(AWS_EC2_REGION_ID, AWS_EC2_VPC_ID)
+  _create_index(ES_HOST)
+  print("%s : Write %s in %s" % (str(datetime.now()), log_filename, INDEX))
+  
   for line in body.split("\n"):
     if not line or line in NOISE:
       continue
@@ -126,17 +137,21 @@ def lambda_handler():#(event, context):
     print("%s : Write last data that length is %s" % (str(datetime.now()), len(data)))
 
 
-def _bulk(host, doc):
-  credentials = _get_credentials()
-  url = _create_url(host, "/_bulk")
-  response = es_request(url, "POST", credentials, data=doc)
-  if not response.ok:
-    print(response.text)
-    print("Request is failed")
-    return False
-    
-  print("Request is sent successfully")
+def _validate_log_date(now, lines):
+  delta = timedelta(hours=2)
+  
+  for line in lines:
+    if not line or line in NOISE:
+      continue
+    elif line.startswith("# Time: "):
+      log_time = datetime.strptime(line[8:], "%y%m%d %H:%M:%S")
+    if (now - log_time) > delta:
+      return False
+    else:
+      return True
+      
   return True
+
 
 def _create_index(host):
   d = dict()
@@ -156,6 +171,19 @@ def _create_index(host):
   response = es_request(url, "PUT", credentials, data=json.dumps(d))
   if not response.ok:
     print(response.text)
+  
+  
+def _bulk(host, doc):
+  credentials = _get_credentials()
+  url = _create_url(host, "/_bulk")
+  response = es_request(url, "POST", credentials, data=doc)
+  if not response.ok:
+    print(response.text)
+    print("Request is failed")
+    return False
+    
+  print("Request is sent successfully")
+  return True
   
   
 def _skip_fingerprint(s):
