@@ -88,13 +88,13 @@ def lambda_handler():#(event, context):
   else:
     print("%s is empty!" % (log_filename))
     return
-  
+
   # Get ready for extracting log file.
   i = 0
   ec2list = getEC2InstancesInVpc(AWS_EC2_REGION_ID, AWS_EC2_VPC_ID)
   _create_index(ES_HOST)
   print("%s : Write %s in %s" % (str(datetime.now()), log_filename, INDEX))
-  
+
   while i < len(lines):
     line = lines[i]
     if not line:
@@ -142,7 +142,7 @@ def lambda_handler():#(event, context):
       timestamp = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
       timestamp = timestamp.replace(tzinfo=tz.tzutc()).astimezone(zoneinfo.gettz(TIMEZONE))
       doc["timestamp"] = timestamp.isoformat()
-    
+
     elif BEGIN_DEADLOCK in line:
       doc["type"] = "Deadlock"
       i += 1 # ignore deadlock dectected message
@@ -169,7 +169,7 @@ def lambda_handler():#(event, context):
       tr_b = ""
       for offset in range(TRASACTION_LENGTH):
         tr_b += lines[i + offset] + "\n"
-    
+
       doc["transaction_b"] = tr_b
 
       m = REG_HOLD_USER_INFO.search(tr_b)
@@ -209,11 +209,11 @@ def lambda_handler():#(event, context):
   response = es_request(url, "PUT", credentials, data=json.dumps(d))
   if not response.ok:
     print(response.text)
-    
-    
+
+
 def _validate_log_date(now, line):
   delta = timedelta(hours=2)
-  
+
   m = REG_GENERAL_ERR.match(line)
   if m:
     log_time = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
@@ -222,18 +222,18 @@ def _validate_log_date(now, line):
   elif BEGIN_DEADLOCK in line:
     m = REG_DEADLOCK.match(lines[i])
     log_time = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
-    if (now - log_time) < delta:
+    if (now - log_time) > delta:
       return False
-      
+
   return True
-  
+
 
 def _create_index(host):
   d = dict()
   d["template"] = "rds_errorlog-*"
   d["settings"] = dict()
   d["settings"]["number_of_shards"] = 1
-  
+
 
 def _bulk(host, doc):
   credentials = _get_credentials()
@@ -243,7 +243,7 @@ def _bulk(host, doc):
     print(response.text)
     print("Request is failed")
     return False
-    
+
   print("Request is sent successfully")
   return True
 
@@ -279,7 +279,7 @@ def getEC2InstancesInVpc(region, vpc):
 
 def es_request(url, method, credentials, region=ES_DEFAULT_REGION, headers=None, data=None):
   return request(url, method, credentials, "es", region, headers, data)
-  
+
 
 def request(url, method, credentials, service_name, region=None, headers=None, data=None):
   if not region:
