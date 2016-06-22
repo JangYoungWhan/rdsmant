@@ -64,7 +64,6 @@ def lambda_handler():#(event, context):
   if not filter(lambda log: log["LogFileName"] == log_filename, db_files["DescribeDBLogFiles"]):
     print("%s does not exist!" % (log_filename))
     return
-  print("%s : Write %s in %s" % (str(datetime.now()), log_filename, INDEX))
   
   body = client.download_db_log_file_portion(
     DBInstanceIdentifier=RDS_ID,
