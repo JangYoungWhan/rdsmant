@@ -57,6 +57,7 @@ AWS_EC2_VPC_ID = "vpc-xxxxx"
 
 
 def lambda_handler():#(event, context):
+  print("%s : Run slowquery2es.py" % (str(datetime.now())))
   client = boto3.client("rds", region_name=AWS_RDS_REGION_ID)
   db_files = client.describe_db_log_files(DBInstanceIdentifier=RDS_ID)
 
@@ -76,7 +77,7 @@ def lambda_handler():#(event, context):
   lines = body.split("\n")
   if len(lines) > 0:
     if not _validate_log_date(NOW, lines):
-      print("%s already read log!" % (log_filename))
+      print("%s already read log before!" % (log_filename))
       return
   else:
     print("%s is empty!" % (log_filename))

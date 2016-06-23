@@ -66,6 +66,7 @@ AWS_EC2_VPC_ID = "vpc-xxxxx"
 
 
 def lambda_handler():#(event, context):
+  print("%s : Run errorlog2es.py" % (str(datetime.now())))
   client = boto3.client("rds", region_name=AWS_RDS_REGION_ID)
   db_files = client.describe_db_log_files(DBInstanceIdentifier=RDS_ID)
 
@@ -83,7 +84,7 @@ def lambda_handler():#(event, context):
   lines = body.split("\n")
   if len(lines) > 0:
     if not _validate_log_date(NOW, lines[0]):
-      print("%s already read log!" % (log_filename))
+      print("%s already read log before!" % (log_filename))
       return
   else:
     print("%s is empty!" % (log_filename))
@@ -221,7 +222,7 @@ def _validate_log_date(now, line):
     if (now - log_time) > delta:
       return False
   elif BEGIN_DEADLOCK in line:
-    m = REG_DEADLOCK.match(lines[i])
+    m = REG_DEADLOCK.match(line)
     log_time = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
     log_time = log_time.replace(tzinfo=tz.tzutc()).astimezone(zoneinfo.gettz(TIMEZONE)).now()
     if (now - log_time) > delta:
