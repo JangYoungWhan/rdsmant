@@ -145,7 +145,7 @@ def _validate_log_date(now, lines):
       continue
     elif line.startswith("# Time: "):
       log_time = datetime.strptime(line[8:], "%y%m%d %H:%M:%S")
-    if (now - log_time) > delta:
+    if (now - log_time) < delta:
       return False
     else:
       return True

@@ -219,13 +219,13 @@ def _validate_log_date(now, line):
   if m:
     log_time = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
     log_time = log_time.replace(tzinfo=tz.tzutc()).astimezone(zoneinfo.gettz(TIMEZONE)).now()
-    if (now - log_time) > delta:
+    if (now - log_time) < delta:
       return False
   elif BEGIN_DEADLOCK in line:
     m = REG_DEADLOCK.match(line)
     log_time = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
     log_time = log_time.replace(tzinfo=tz.tzutc()).astimezone(zoneinfo.gettz(TIMEZONE)).now()
-    if (now - log_time) > delta:
+    if (now - log_time) < delta:
       return False
 
   return True
