@@ -11,6 +11,7 @@ import re
 import os
 import json
 import subprocess
+import hashlib
 from datetime import datetime
 from datetime import timedelta
 from dateutil import tz, zoneinfo
@@ -125,9 +126,11 @@ def lambda_handler():#(event, context):
       if doc.get("sql"):
         doc["sql"] += "\n" + line
         doc["fingerprint"] += "\n" + _get_fingerprint(line)
+        doc["sha"] = hashlib.sha1(doc["fingerprint"]).hexdigest()
       else:
         doc["sql"] = line
         doc["fingerprint"] = _get_fingerprint(line)
+        doc["sha"] = hashlib.sha1(doc["fingerprint"]).hexdigest()
 
   if doc:
     data += '{"index":{"_index":"' + INDEX + '","_type":"' + TYPE + '"}}\n'
@@ -145,7 +148,9 @@ def _validate_log_date(now, lines):
       continue
     elif line.startswith("# Time: "):
       log_time = datetime.strptime(line[8:], "%y%m%d %H:%M:%S")
-    if (now - log_time) < delta:
+      log_time = log_time.replace(tzinfo=tz.tzutc()).astimezone(zoneinfo.gettz(TIMEZONE))
+      log_time = log_time.replace(tzinfo=None)
+    if (now - log_time) > delta:
       return False
     else:
       return True
