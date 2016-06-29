@@ -49,9 +49,9 @@ BEGIN_TRX = "TRANSACTION"
 
 TRASACTION_LENGTH = 9
 
-REG_GENERAL_ERR = re.compile("(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (\w+) \[(\w+)\] ([\w :'\.\(\)\@\%]+)")
+REG_GENERAL_ERR = re.compile("(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (\w+) \[(\w+)\] (.*)")
 REG_ABORTED_CONN = re.compile("db: '(\w+)' user: '(\w+)' host: '([\d\.]+)'")
-REG_ACCESS_DENY = re.compile("user '(\w+)'@'([\d\.]+)' ")
+REG_ACCESS_DENY = re.compile("user '(.*)'@'([\d\.]+)' ")
 REG_DEADLOCK = re.compile("(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (\w+)")
 REG_ROLLBACK_TR = re.compile("\*\*\* WE ROLL BACK TRANSACTION \((\d+)\)")
 REG_HOLD_USER_INFO = re.compile("MySQL thread id (\w+), OS thread handle \w+, query id (\d+) ([\d\.]+) (\w+) ")
@@ -134,8 +134,8 @@ def lambda_handler():#(event, context):
       elif ACCESS_DENY_MSG in message:
         doc["detail"] = ACCESS_DENY_MSG
         match = REG_ACCESS_DENY.search(message)
-        doc["db"] = match.group(1)
-        doc["user"] = match.group(2)
+        doc["user"] = match.group(1)
+        doc["host"] = match.group(2)
       else:
         doc["detail"] = "Other"
       doc["message"] = message
