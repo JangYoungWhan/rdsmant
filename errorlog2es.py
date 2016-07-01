@@ -50,7 +50,7 @@ BEGIN_TRX = "TRANSACTION"
 TRASACTION_LENGTH = 9
 
 REG_GENERAL_ERR = re.compile("(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (\w+) \[(\w+)\] (.*)")
-REG_ABORTED_CONN = re.compile("db: '(\w+)' user: '(\w+)' host: '([\d\.]+)'")
+REG_ABORTED_CONN = re.compile("db: '(\w+)' user: '(\w+)' host: '([\w\d\.]+)'")
 REG_ACCESS_DENY = re.compile("user '(.*)'@'([\d\.]+)' ")
 REG_DEADLOCK = re.compile("(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (\w+)")
 REG_ROLLBACK_TR = re.compile("\*\*\* WE ROLL BACK TRANSACTION \((\d+)\)")
