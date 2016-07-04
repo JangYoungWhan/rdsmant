@@ -11,7 +11,6 @@ import re
 import os
 import json
 import subprocess
-import hashlib
 from datetime import datetime
 from datetime import timedelta
 from dateutil import tz, zoneinfo
@@ -72,6 +71,8 @@ def lambda_handler():#(event, context):
     LogFileName=log_filename
   )["LogFileData"]
   
+  last_time = _init_last_time("/var/log/rdsmon/slowquery2es.log")
+  is_new_sq = True
   data = ""
   doc = {}
 
@@ -92,21 +93,34 @@ def lambda_handler():#(event, context):
   for line in body.split("\n"):
     if not line or line in NOISE:
       continue
-    elif line.startswith("# Time: "):
+
+    if is_new_sq and _is_sq_able_to_begin(line):
       if doc:
-        data += '{"index":{"_index":"' + INDEX + '","_type":"' + TYPE + '"}}\n'
+        doc["timestamp"] = last_time
         doc["fingerprint"] = _clean_fingerprint(doc["fingerprint"])
+        data += '{"index":{"_index":"' + INDEX + '","_type":"' + TYPE + '"}}\n'        
         data += json.dumps(doc) + "\n"
+        doc = {}
       if len(data) > 100000:
         data = _remove_dup_lf(data)
         _bulk(ES_HOST, data)
         print("%s : Write data that length is %s" % (str(datetime.now()), len(data)))
         data = ""
 
-      timestamp = datetime.strptime(line[8:], "%y%m%d %H:%M:%S")
-      if TIMEZONE:
-        timestamp = timestamp.replace(tzinfo=tz.tzutc()).astimezone(zoneinfo.gettz(TIMEZONE))
-      doc = {"timestamp": timestamp.isoformat()}
+      if line.startswith("# Time: "):
+        last_time = _get_local_time(line)
+      else: # It may include "# User@Host: "
+        doc["user"] = line.split("[")[1].split("]")[0]
+        doc["client"] = line.split("[")[2].split("]")[0]
+        doc["client_id"] = line.split(" Id: ")[1]
+        ip_addr = doc["client"]
+        if ip_addr not in ec2list:
+          doc["name"] = "Missed"
+        else:
+          doc["name"] = ec2list[ip_addr]
+
+      is_new_sq = False
+
     elif line.startswith("# User@Host: "):
       doc["user"] = line.split("[")[1].split("]")[0]
       doc["client"] = line.split("[")[2].split("]")[0]
@@ -126,19 +140,19 @@ def lambda_handler():#(event, context):
       if doc.get("sql"):
         doc["sql"] += "\n" + line
         doc["fingerprint"] += "\n" + _get_fingerprint(line)
-        doc["sha"] = hashlib.sha1(doc["fingerprint"]).hexdigest()
       else:
         doc["sql"] = line
         doc["fingerprint"] = _get_fingerprint(line)
-        doc["sha"] = hashlib.sha1(doc["fingerprint"]).hexdigest()
+      is_new_sq = True
 
   if doc:
-    data += '{"index":{"_index":"' + INDEX + '","_type":"' + TYPE + '"}}\n'
+    doc["timestamp"] = last_time
     doc["fingerprint"] = _remove_dup_lf(doc["fingerprint"])
+    data += '{"index":{"_index":"' + INDEX + '","_type":"' + TYPE + '"}}\n'
     data += json.dumps(doc) + "\n"
     _bulk(ES_HOST, data)
     print("%s : Write last data that length is %s" % (str(datetime.now()), len(data)))
-
+  print("last_time : %s" % (last_time))
 
 def _validate_log_date(now, lines):
   delta = timedelta(hours=2)
@@ -191,6 +205,21 @@ def _bulk(host, doc):
   return True
   
   
+def _init_last_time(path):
+  last_re = re.compile("last_time : (.*)\\n?")
+
+  ifs = open(path, "r")
+  lines = ifs.readlines()
+
+  for l in reversed(lines):
+    if not l: continue
+    m = last_re.match(l)
+    if m is not None:
+      return (m.groups(0))[0]
+  ifs.close()
+  return ""  
+  
+  
 def _skip_fingerprint(s):
   SET_TIMESTAMP = "set timestamp="
   USE_DATABASE = "use "
@@ -212,7 +241,14 @@ def _remove_dup_lf(s):
   return stripped
   
   
+def _cmd_exists(cmd):
+  return subprocess.call("type " + cmd, shell=True,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE) == 0
+
 def _get_fingerprint(sql):
+  if not _cmd_exists("pt-fingerprint"):
+    return sql
+
   cmd = "pt-fingerprint --query '%s'" % sql
 
   try:
@@ -238,6 +274,20 @@ def _create_url(host, path, ssl=False):
     return "http://" + host + path
     
     
+def _is_sq_able_to_begin(line):
+  if line.startswith("# Time: ") or line.startswith("# User@Host: "):
+    return True
+  else:
+    return False
+
+
+def _get_local_time(line):
+  timestamp = datetime.strptime(line[8:], "%y%m%d %H:%M:%S")
+  if TIMEZONE:
+    timestamp = timestamp.replace(tzinfo=tz.tzutc()).astimezone(zoneinfo.gettz(TIMEZONE))
+  return timestamp.isoformat()
+  
+  
 def getEC2InstancesInVpc(region, vpc):
   ec2list = dict()
 
