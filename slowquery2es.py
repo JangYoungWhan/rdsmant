@@ -210,7 +210,7 @@ class SlowquerySender:
   def send2ES(self):
     credentials = self.getCredentials()
     url = self.createURL(self._GENERAL_CONFIG["ES_HOST"], "/_bulk")
-    response = self.request2ES(url, "POST", credentials, data=self.removeDuplicatedLineFeed(self._data))
+    response = self.request2ES(url, "POST", credentials, data=self._data)
     
     if not response.ok:
       print(response.text)
@@ -237,6 +237,7 @@ class SlowquerySender:
 
   def appendDoc2Data(self, doc, flush=False):
     doc["timestamp"] = self._last_time
+    doc["sql"] = self.removeDuplicatedLineFeed(doc["sql"])
     doc["fingerprint"] = self._fp.regularizeFingerprint(doc["fingerprint"])
     self._data += '{"index":{"_index":"' + self._ES_INDEX + '","_type":"' + self._GENERAL_CONFIG["RDS_ID"] + '"}}\n'        
     self._data += json.dumps(doc) + "\n"
@@ -335,8 +336,6 @@ class SlowquerySender:
       i += 1
 
     if doc:
-      doc["timestamp"] = self._last_time
-      print("%s : Write last data that length is %s" % (str(datetime.now()), len(self._data)))
       self.appendDoc2Data(doc, flush=True)
 
     print("Written Slow Queries : %s" % str(self._num_of_total_doc))
@@ -378,6 +377,7 @@ class Fingerprinter():
     
     # Substitue multiple line feed to single line feed.
     query = re.sub(r"(\n)+", r"\n", query)
+    query = s.strip()
   
     return query
 
