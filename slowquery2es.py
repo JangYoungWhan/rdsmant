@@ -63,7 +63,7 @@ class SlowquerySender:
 
     self._LOG_CONFIG = {
       "LOG_OUTPUT_DIR": "/var/log/rdsmon/slowquery2es.log",
-      "RAW_OUTPUT_DIR": "" # (Optional) ## ex) ./raw
+      "RAW_OUTPUT_DIR": "" # (Optional) ## ex) /home/rds/raw
       }
 
     self._log_filename = "NONE"
@@ -71,6 +71,7 @@ class SlowquerySender:
     self._last_time = ""
     self._data = ""
     self._new_doc = True
+    self._num_of_total_doc = 0
 
     self._fp = Fingerprinter(self._GENERAL_CONFIG["FINGERPRINT_EXCUTABLE"])
     self._reaminer = RawFileRemainer(self._LOG_CONFIG["RAW_OUTPUT_DIR"])
@@ -234,13 +235,14 @@ class SlowquerySender:
     stripped = re.sub(r"(\n)+", r"\n", stripped)
     return stripped
 
-  def appendDoc2Data(self, doc):
+  def appendDoc2Data(self, doc, flush=False):
     doc["timestamp"] = self._last_time
     doc["fingerprint"] = self._fp.regularizeFingerprint(doc["fingerprint"])
     self._data += '{"index":{"_index":"' + self._ES_INDEX + '","_type":"' + self._GENERAL_CONFIG["RDS_ID"] + '"}}\n'        
     self._data += json.dumps(doc) + "\n"
 
-    if len(self._data) > 100000:
+    self._num_of_total_doc += 1
+    if len(self._data) > 100000 or flush:
       self.send2ES()
 
   def initNewDoc(self, doc, l1, l2, i):
@@ -296,7 +298,6 @@ class SlowquerySender:
     self.createTemplate(self._GENERAL_CONFIG["ES_HOST"])
     
     print("%s : Ready to write %s in %s" % (str(datetime.now()), self._log_filename, self._ES_INDEX))
-    num_of_total_doc = 0
     i = 0
     doc = {}
 
@@ -315,7 +316,6 @@ class SlowquerySender:
         
         doc, i = self.initNewDoc(doc, lines[i], lines[i+1], i)
         line = lines[i]
-        num_of_total_doc += 1
 
       if line.startswith("# Query_time: "):
         m = self._REGEX4REFINE["REG_TIME"].match(line).groups(0)
@@ -336,11 +336,11 @@ class SlowquerySender:
 
     if doc:
       doc["timestamp"] = self._last_time
-      self.appendDoc2Data(doc)
       print("%s : Write last data that length is %s" % (str(datetime.now()), len(self._data)))
+      self.appendDoc2Data(doc, flush=True)
 
-    print("Written Slow Queries : %s" % str(num_of_total_doc))
-    print("self._last_time : %s" % (self._last_time))
+    print("Written Slow Queries : %s" % str(self._num_of_total_doc))
+    print("last_time : %s" % (self._last_time))
 
 class Fingerprinter():
   def __init__(self, fp_path):
@@ -471,9 +471,11 @@ class RawFileRemainer(DirectoryManager):
 
     if not os.path.exists(cur_date_path):
       self.mkdir(cur_date_path)
-    f = open(cur_date_path + raw_name, "w")
+    raw_path = cur_date_path + raw_name
+    f = open(raw_path, "w")
     f.write(raw_data)
     f.close()
+    print("%s : Remain raw log data : %s" % (str(datetime.now()), raw_path))
 
 
 if __name__ == '__main__':
