@@ -85,10 +85,27 @@ class SlowquerySender:
     if not filter(lambda log: log["LogFileName"] == self._log_filename, db_files["DescribeDBLogFiles"]):
       return ""
 
-    log_data = client.download_db_log_file_portion(
-      DBInstanceIdentifier=self._GENERAL_CONFIG["RDS_ID"],
-      LogFileName=self._log_filename
-    )["LogFileData"]
+    marker = "0"
+    log_data = ""
+
+    # It used like do-while statement.
+    ret = client.download_db_log_file_portion(
+        DBInstanceIdentifier=self._GENERAL_CONFIG["RDS_ID"],
+        LogFileName=self._log_filename,
+        Marker=marker,
+        NumberOfLines=500)
+    log_data = ret["LogFileData"]
+    marker = ret["Marker"]
+
+    while ret["AdditionalDataPending"]:
+      ret = client.download_db_log_file_portion(
+        DBInstanceIdentifier=self._GENERAL_CONFIG["RDS_ID"],
+        LogFileName=self._log_filename,
+        Marker=marker,
+        NumberOfLines=500)
+
+      log_data += ret["LogFileData"]
+      marker = ret["Marker"]
 
     # Delete old log files.
     self._reaminer.clearOutOfDateRawFiles()

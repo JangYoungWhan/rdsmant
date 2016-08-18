@@ -75,13 +75,32 @@ def lambda_handler():#(event, context):
     print("%s does not exist!" % (log_filename))
     return
 
-  body = client.download_db_log_file_portion(DBInstanceIdentifier=RDS_ID,
-    LogFileName=log_filename)["LogFileData"]
+  marker = "0"
+  log_data = ""
+
+    # It used like do-while statement.
+  ret = client.download_db_log_file_portion(
+        DBInstanceIdentifier=self._GENERAL_CONFIG["RDS_ID"],
+        LogFileName=self._log_filename,
+        Marker=marker,
+        NumberOfLines=500)
+  log_data = ret["LogFileData"]
+  marker = ret["Marker"]
+
+  while ret["AdditionalDataPending"]:
+    ret = client.download_db_log_file_portion(
+          DBInstanceIdentifier=self._GENERAL_CONFIG["RDS_ID"],
+          LogFileName=self._log_filename,
+          Marker=marker,
+          NumberOfLines=500)
+
+    log_data += ret["LogFileData"]
+    marker = ret["Marker"]
 
   data = ""
   doc = {}
 
-  lines = body.split("\n")
+  lines = log_data.split("\n")
   if len(lines) > 0:
     if not _validate_log_date(NOW, lines[0]):
       print("%s already read log before!" % (log_filename))
