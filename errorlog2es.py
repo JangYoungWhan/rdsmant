@@ -80,8 +80,8 @@ def lambda_handler():#(event, context):
 
     # It used like do-while statement.
   ret = client.download_db_log_file_portion(
-        DBInstanceIdentifier=self._GENERAL_CONFIG["RDS_ID"],
-        LogFileName=self._log_filename,
+        DBInstanceIdentifier=RDS_ID,
+        LogFileName=log_filename,
         Marker=marker,
         NumberOfLines=500)
   log_data = ret["LogFileData"]
@@ -89,8 +89,8 @@ def lambda_handler():#(event, context):
 
   while ret["AdditionalDataPending"]:
     ret = client.download_db_log_file_portion(
-          DBInstanceIdentifier=self._GENERAL_CONFIG["RDS_ID"],
-          LogFileName=self._log_filename,
+          DBInstanceIdentifier=RDS_ID,
+          LogFileName=log_filename,
           Marker=marker,
           NumberOfLines=500)
 
