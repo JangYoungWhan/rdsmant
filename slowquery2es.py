@@ -12,6 +12,7 @@ import subprocess
 import glob
 import os
 import re
+import time
 
 from datetime import date
 from datetime import datetime
@@ -169,12 +170,18 @@ class SlowquerySender:
     return False
 
   def initEC2InstancesInVpc(self, region, vpc):
-    ec2 = boto3.resource("ec2", region_name=region)
-    vpc = ec2.Vpc(vpc)
-    for i in vpc.instances.all():
-      for tag in i.tags:
-        if tag['Key'] == 'Name':
-          self._ec2dict[i.private_ip_address] = "".join(tag['Value'].split())
+    for attempt in range(3):
+      try:
+        ec2 = boto3.resource("ec2", region_name=region)
+        vpc = ec2.Vpc(vpc)
+      except:
+        time.sleep(3)
+      else:
+        for i in vpc.instances.all():
+          for tag in i.tags:
+            if tag['Key'] == 'Name':
+              self._ec2dict[i.private_ip_address] = "".join(tag['Value'].split())
+        break
 
   def getCredentials(self):
     return Credentials(self._CREDENTIALS["AWS_ACCESS_KEY_ID"],

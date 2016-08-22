@@ -10,9 +10,12 @@ import boto3
 import re
 import os
 import json
+import time
+
 from datetime import datetime
 from datetime import timedelta
 from dateutil import tz, zoneinfo
+
 from botocore.awsrequest import AWSRequest
 from botocore.auth import SigV4Auth
 from botocore.endpoint import PreserveAuthSession
@@ -292,12 +295,19 @@ def _create_url(host, path, ssl=False):
 def getEC2InstancesInVpc(region, vpc):
   ec2list = dict()
 
-  ec2 = boto3.resource("ec2", region_name=region)
-  vpc = ec2.Vpc(vpc)
-  for i in vpc.instances.all():
-    for tag in i.tags:
-      if tag['Key'] == 'Name':
-        ec2list[i.private_ip_address] = "".join(tag['Value'].split())
+  for attempt in range(3):
+    try:
+      ec2 = boto3.resource("ec2", region_name=region)
+      vpc = ec2.Vpc(vpc)
+    except:
+      time.sleep(3)
+    else:
+      for i in vpc.instances.all():
+        for tag in i.tags:
+          if tag['Key'] == 'Name':
+            ec2list[i.private_ip_address] = "".join(tag['Value'].split())
+      break
+          
   return ec2list
 
 
