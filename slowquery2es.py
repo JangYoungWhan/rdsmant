@@ -104,6 +104,7 @@ class SlowquerySender:
         LogFileName=self._log_filename,
         Marker=marker,
         NumberOfLines=500)
+        print("keep going...")
 
       log_data += ret["LogFileData"]
       marker = ret["Marker"]
@@ -174,13 +175,14 @@ class SlowquerySender:
       try:
         ec2 = boto3.resource("ec2", region_name=region)
         vpc = ec2.Vpc(vpc)
-      except:
-        time.sleep(3)
-      else:
         for i in vpc.instances.all():
           for tag in i.tags:
             if tag['Key'] == 'Name':
               self._ec2dict[i.private_ip_address] = "".join(tag['Value'].split())
+      except:
+        time.sleep(3)
+      else:
+        print("initEC2InstancesInVpc failed.")
         break
 
   def getCredentials(self):
@@ -504,4 +506,7 @@ class RawFileRemainer(DirectoryManager):
 
 if __name__ == '__main__':
   sq2es = SlowquerySender()
-  sq2es.run()
+  try:
+    sq2es.run()
+  except Exception as e:
+    print(e)

@@ -299,13 +299,13 @@ def getEC2InstancesInVpc(region, vpc):
     try:
       ec2 = boto3.resource("ec2", region_name=region)
       vpc = ec2.Vpc(vpc)
-    except:
-      time.sleep(3)
-    else:
       for i in vpc.instances.all():
         for tag in i.tags:
           if tag['Key'] == 'Name':
             ec2list[i.private_ip_address] = "".join(tag['Value'].split())
+    except:
+      time.sleep(3)
+    else:
       break
           
   return ec2list
@@ -324,4 +324,8 @@ def request(url, method, credentials, service_name, region=None, headers=None, d
   return PreserveAuthSession().send(aws_request.prepare())
 
 
-lambda_handler()
+if __name__ == '__main__':
+  try:
+    lambda_handler()
+  except Exception as e:
+    print(e)
