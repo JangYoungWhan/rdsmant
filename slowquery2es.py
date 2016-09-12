@@ -317,6 +317,7 @@ class SlowquerySender:
     if len(self._data) > 100000 or flush:
       if not self._GENERAL_CONFIG["USING_KEY"]:
         self._es.bulk(index=self._ES_INDEX, body=self._data, refresh=flush)
+        self._data = list()
       else:
         self.send2ES()
 
@@ -347,6 +348,12 @@ class SlowquerySender:
     return doc, i
 
   def run(self):
+    #init
+    if not self._GENERAL_CONFIG["USING_KEY"]:
+      self._data = list()
+    else:
+      self._data = ""
+  
     now = datetime.now()
     log_data = self.getRdsSlowQlog(now)
     #log_data = self.getRdsSlowQlog4Debug("D:/Downloads/mysql-slowquery.log.1")
