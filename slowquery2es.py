@@ -24,6 +24,8 @@ from botocore.auth import SigV4Auth
 from botocore.endpoint import PreserveAuthSession
 from botocore.credentials import Credentials
 
+from elasticsearch import Elasticsearch
+
 class SlowquerySender:
   def __init__(self):
     self._SLOWQUERYLOG_PREFIX = "slowquery/mysql-slowquery.log."
@@ -47,6 +49,9 @@ class SlowquerySender:
       # If you have ec2 instances, then It need region and VPC involving instances.
       "AWS_EC2_REGION_ID": "", ## ex) us-west-2
       "AWS_EC2_VPC_ID": "", ## ex) vpc-123abc456
+
+      # Whethere if you want to use credential key.
+      "USING_KEY": False
 
       # Stay empty the fingerprint path, if you don't want to use percona Fingerprint tool.
       # (Optional)
@@ -192,7 +197,40 @@ class SlowquerySender:
   def setTargetIndex(self, now):
     self._ES_INDEX = self._GENERAL_CONFIG["INDEX_PREFIX"] + "-" + datetime.strftime(now, "%Y.%m")
 
-  def createTemplate(self, host):
+  def createIndexWithout(self, index_name):
+    self._es = Elasticsearch(self._GENERAL_CONFIG["ES_HOST"])
+    template_body = {
+      "template" : "rds_slowquerylog-*",
+      "mappings" : {
+        self._GENERAL_CONFIG["RDS_ID"]: {
+          "properties": {
+            "query_time": {
+              "type": "float",
+              "index": "not_analyzed" },
+            "row_sent": {
+              "type": "integer",
+              "index": "not_analyzed" },
+            "rows_examined": {
+              "type": "integer",
+              "index": "not_analyzed" },
+            "lock_time": {
+              "type": "float",
+              "index": "not_analyzed" }
+            }
+          }
+        },
+      "settings" : {
+        "number_of_shards": 1,
+        "number_of_replicas": 0 }
+    }
+
+    response = self._es.indices.put_template(name=template_name, body=template_body)
+    if response["acknowledged"]:
+      print("Create template success.")
+    else:
+      print("Create template failed.")
+
+  def createTemplateWithKey(self, host):
     d = dict()
     d["template"] = "rds_slowquerylog-*"
     d["settings"] = dict()
@@ -265,12 +303,22 @@ class SlowquerySender:
     doc["timestamp"] = self._last_time
     doc["sql"] = self.removeDuplicatedLineFeed(doc["sql"])
     doc["fingerprint"] = self._fp.regularizeFingerprint(doc["fingerprint"])
-    self._data += '{"index":{"_index":"' + self._ES_INDEX + '","_type":"' + self._GENERAL_CONFIG["RDS_ID"] + '"}}\n'        
-    self._data += json.dumps(doc) + "\n"
+
+    if not self._GENERAL_CONFIG["USING_KEY"]:
+      self._data.append({"index": {
+                           "_index": self._ES_INDEX,
+                           "_type": self._GENERAL_CONFIG["RDS_ID"] }})
+      self._data.append(doc)
+    else:
+      self._data += '{"index":{"_index":"' + self._ES_INDEX + '","_type":"' + self._GENERAL_CONFIG["RDS_ID"] + '"}}\n'        
+      self._data += json.dumps(doc) + "\n"
 
     self._num_of_total_doc += 1
     if len(self._data) > 100000 or flush:
-      self.send2ES()
+      if not self._GENERAL_CONFIG["USING_KEY"]:
+        self._es.bulk(index=self._ES_INDEX, body=self._data, refresh=flush)
+      else:
+        self.send2ES()
 
   def initNewDoc(self, doc, l1, l2, i):
     if l1.startswith("# Time: "):
@@ -322,7 +370,11 @@ class SlowquerySender:
       self._GENERAL_CONFIG["AWS_EC2_REGION_ID"],
       self._GENERAL_CONFIG["AWS_EC2_VPC_ID"])
     self.setTargetIndex(now)
-    self.createTemplate(self._GENERAL_CONFIG["ES_HOST"])
+    if not self._GENERAL_CONFIG["USING_KEY"]:
+      
+      self.createTemplateWithoutKey(self._ES_INDEX)
+    else:
+      self.createTemplateWithKey(self._GENERAL_CONFIG["ES_HOST"])
     
     print("%s : Ready to write %s in %s" % (str(datetime.now()), self._log_filename, self._ES_INDEX))
     i = 0
@@ -403,7 +455,7 @@ class Fingerprinter():
     
     # Substitue multiple line feed to single line feed.
     query = re.sub(r"(\n)+", r"\n", query)
-    query = s.strip()
+    query = query.strip()
   
     return query
 
