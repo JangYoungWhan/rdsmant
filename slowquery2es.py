@@ -19,11 +19,6 @@ from datetime import datetime
 from datetime import timedelta
 from dateutil import tz, zoneinfo
 
-from botocore.awsrequest import AWSRequest
-from botocore.auth import SigV4Auth
-from botocore.endpoint import PreserveAuthSession
-from botocore.credentials import Credentials
-
 from elasticsearch import Elasticsearch
 
 class SlowquerySender:
@@ -32,35 +27,23 @@ class SlowquerySender:
 
     self._GENERAL_CONFIG = {
       # Elasticsearch host name
-      "ES_HOST": "127.0.0.1:8088",
+      "ES_HOST": "192.168.0.1:4040",
       
       # Elasticsearch prefix for index name
-      "INDEX_PREFIX": "rds_slowquerylog",
+      "INDEX_PREFIX": "rds_slowquery",
       
-      # DB instance identifier
-      "RDS_ID": "", ## ex ) master
+      # Elasticsearch type name is rds instance id
+      "RDS_ID": "tb-master",
       
       # Enabled to change timezone. If you set UTC, this parameter is blank
       "TIMEZONE": "Asia/Seoul",
 
       # RDS region which you want to crawling error log.
-      "AWS_RDS_REGION_ID": "", ## ex) us-west-2
+      "AWS_RDS_REGION_ID": "ap-northeast-2",
 
       # If you have ec2 instances, then It need region and VPC involving instances.
-      "AWS_EC2_REGION_ID": "", ## ex) us-west-2
-      "AWS_EC2_VPC_ID": "", ## ex) vpc-123abc456
-
-      # Whethere if you want to use credential key.
-      "USING_KEY": False
-
-      # Stay empty the fingerprint path, if you don't want to use percona Fingerprint tool.
-      # (Optional)
-      "FINGERPRINT_EXCUTABLE": "" ## ex) /bin/pt-Fingerprint
-      }
-
-    self._CREDENTIALS = {
-      "AWS_ACCESS_KEY_ID": os.environ["AWS_ACCESS_KEY_ID"],
-      "AWS_SECRET_ACCESS_KEY": os.environ["AWS_SECRET_ACCESS_KEY"]
+      "AWS_EC2_REGION_ID": "ap-northeast-2",
+      "AWS_EC2_VPC_ID": "vpc-XXxxXXxx"
       }
 
     self._REGEX4REFINE = {
@@ -68,26 +51,27 @@ class SlowquerySender:
       }
 
     self._LOG_CONFIG = {
-      "LOG_OUTPUT_DIR": "/var/log/rdsmon/slowquery2es.log",
-      "RAW_OUTPUT_DIR": "" # (Optional) ## ex) /home/rds/raw
+      "LOG_OUTPUT_DIR": "/var/log/rdslog/slowquery2es.log",
+      "RAW_OUTPUT_DIR": "/var/log/raw_rdslog/raw_slowquery" # (Optional)
       }
 
+    self._es = Elasticsearch(self._GENERAL_CONFIG["ES_HOST"])
     self._log_filename = "NONE"
     self._ec2dict = dict()
     self._last_time = ""
-    self._data = ""
+    self._data = list()
     self._new_doc = True
     self._num_of_total_doc = 0
+    self._now = datetime.now()
 
-    self._fp = Fingerprinter(self._GENERAL_CONFIG["FINGERPRINT_EXCUTABLE"])
     self._reaminer = RawFileRemainer(self._LOG_CONFIG["RAW_OUTPUT_DIR"])
 
   # Get raw data.
-  def getRdsSlowQlog(self, now):
+  def getRdsSlowQlog(self):
     client = boto3.client("rds", region_name=self._GENERAL_CONFIG["AWS_RDS_REGION_ID"])
     db_files = client.describe_db_log_files(DBInstanceIdentifier=self._GENERAL_CONFIG["RDS_ID"])
 
-    self._log_filename = self._SLOWQUERYLOG_PREFIX + str(now.utcnow().hour)
+    self._log_filename = self._SLOWQUERYLOG_PREFIX + str((self._now.utcnow()).hour)
     if not filter(lambda log: log["LogFileName"] == self._log_filename, db_files["DescribeDBLogFiles"]):
       return ""
 
@@ -109,15 +93,14 @@ class SlowquerySender:
         LogFileName=self._log_filename,
         Marker=marker,
         NumberOfLines=500)
-        print("keep going...")
+      print("keep going...")
 
       log_data += ret["LogFileData"]
       marker = ret["Marker"]
 
     # Delete old log files.
     self._reaminer.clearOutOfDateRawFiles()
-
-    self._reaminer.makeRawLog("mysql-slowquery.log." + str(now.utcnow().hour), log_data)
+    self._reaminer.makeRawLog("mysql-slowquery.log." + str((self._now.utcnow()).hour), log_data)
 
     return log_data
 
@@ -131,7 +114,7 @@ class SlowquerySender:
       if not l: break
     return content
 
-  def validateLogDate(self, now, lines):
+  def validateLogDate(self, lines):
     delta = timedelta(hours=2)
   
     for line in lines:
@@ -141,9 +124,9 @@ class SlowquerySender:
         log_time = datetime.strptime(line[8:], "%y%m%d %H:%M:%S")
         log_time = log_time.replace(tzinfo=tz.tzutc()).astimezone(zoneinfo.gettz(self._GENERAL_CONFIG["TIMEZONE"]))
         log_time = log_time.replace(tzinfo=None)
-        print(now, log_time)
-        print("diff :", now - log_time)
-        if (now - log_time) > delta:
+        print(self._now, log_time)
+        print("diff :", self._now - log_time)
+        if (self._now - log_time) > delta:
           return False
         else:
           return True
@@ -153,7 +136,7 @@ class SlowquerySender:
   # Initialization.
   def initLastTime(self, path):
     if not os.path.exists(path):
-      cur_time = datetime.now().strftime("%y%m%d %H:%M:%S")
+      cur_time = dself._now.strftime("%y%m%d %H:%M:%S")
       self._last_time = datetime.strptime(cur_time, "%y%m%d %H:%M:%S").isoformat()
       return False
 
@@ -171,7 +154,7 @@ class SlowquerySender:
         return True
     ifs.close()
 
-    cur_time = datetime.now().strftime("%y%m%d %H:%M:%S")
+    cur_time = self._now.strftime("%y%m%d %H:%M:%S")
     self._last_time = datetime.strptime(cur_time, "%y%m%d %H:%M:%S").isoformat()
     return False
 
@@ -186,21 +169,16 @@ class SlowquerySender:
               self._ec2dict[i.private_ip_address] = "".join(tag['Value'].split())
       except:
         time.sleep(3)
+        print("sleeping..., because DescribeInstances have been failed.")
       else:
-        print("initEC2InstancesInVpc failed.")
         break
 
-  def getCredentials(self):
-    return Credentials(self._CREDENTIALS["AWS_ACCESS_KEY_ID"],
-                       self._CREDENTIALS["AWS_SECRET_ACCESS_KEY"])
+  def setTargetIndex(self):
+    self._ES_INDEX = self._GENERAL_CONFIG["INDEX_PREFIX"] + "-" + datetime.strftime(self._now, "%Y.%m")
 
-  def setTargetIndex(self, now):
-    self._ES_INDEX = self._GENERAL_CONFIG["INDEX_PREFIX"] + "-" + datetime.strftime(now, "%Y.%m")
-
-  def createIndexWithout(self, index_name):
-    self._es = Elasticsearch(self._GENERAL_CONFIG["ES_HOST"])
+  def createTemplate(self, template_name):
     template_body = {
-      "template" : "rds_slowquerylog-*",
+      "template" : "test_slowquerylog-*",
       "mappings" : {
         self._GENERAL_CONFIG["RDS_ID"]: {
           "properties": {
@@ -230,57 +208,6 @@ class SlowquerySender:
     else:
       print("Create template failed.")
 
-  def createTemplateWithKey(self, host):
-    d = dict()
-    d["template"] = "rds_slowquerylog-*"
-    d["settings"] = dict()
-    d["settings"]["number_of_shards"] = 1
-    d["mappings"] = dict()
-    d["mappings"][self._GENERAL_CONFIG["RDS_ID"]] = dict()
-    d["mappings"][self._GENERAL_CONFIG["RDS_ID"]]["properties"] = dict()
-    d["mappings"][self._GENERAL_CONFIG["RDS_ID"]]["properties"]["query_time"] = {"type": "float", "index": "not_analyzed"}
-    d["mappings"][self._GENERAL_CONFIG["RDS_ID"]]["properties"]["lock_time"] = {"type": "float", "index": "not_analyzed"}
-    d["mappings"][self._GENERAL_CONFIG["RDS_ID"]]["properties"]["rows_sent"] = {"type": "integer", "index": "not_analyzed"}
-    d["mappings"][self._GENERAL_CONFIG["RDS_ID"]]["properties"]["rows_examined"] = {"type": "integer", "index": "not_analyzed"}
-
-    credentials = self.getCredentials()
-    url = self.createURL(host, "/_template/rds_slowquerylog?ignore_conflicts=true")
-    response = self.request2ES(url, "PUT", credentials, data=json.dumps(d))
-    if not response.ok:
-      print(response.text)
-
-
-  # Methods to sending data to ElasticSearch.
-  def createURL(self, host, path, ssl=False):
-    if not path.startswith("/"):
-      path = "/" + path
-
-    if ssl:
-      return "https://" + host + path
-    else:
-      return "http://" + host + path
-
-  def request(self, url, method, credentials, service_name, region=None, headers=None, data=None):
-    if not region:
-      region = "us-west-1"
-
-    aws_request = AWSRequest(url=url, method=method, headers=headers, data=data)
-    SigV4Auth(credentials, service_name, region).add_auth(aws_request)
-    return PreserveAuthSession().send(aws_request.prepare())
-
-  def request2ES(self, url, method, credentials, region=None, headers=None, data=None):
-    return self.request(url, method, credentials, "es", region, headers, data)
-
-  def send2ES(self):
-    credentials = self.getCredentials()
-    url = self.createURL(self._GENERAL_CONFIG["ES_HOST"], "/_bulk")
-    response = self.request2ES(url, "POST", credentials, data=self._data)
-    
-    if not response.ok:
-      print(response.text)
-    print("%s : Write doc into data that length is %s" % (str(datetime.now()), len(self._data)))
-    self._data = ""
-
   def isNewDoc(self, line):
     if (self._new_doc) and (line.startswith("# Time: ") or line.startswith("# User@Host: ")):
       return True
@@ -302,24 +229,15 @@ class SlowquerySender:
   def appendDoc2Data(self, doc, flush=False):
     doc["timestamp"] = self._last_time
     doc["sql"] = self.removeDuplicatedLineFeed(doc["sql"])
-    doc["fingerprint"] = self._fp.regularizeFingerprint(doc["fingerprint"])
-
-    if not self._GENERAL_CONFIG["USING_KEY"]:
-      self._data.append({"index": {
-                           "_index": self._ES_INDEX,
-                           "_type": self._GENERAL_CONFIG["RDS_ID"] }})
-      self._data.append(doc)
-    else:
-      self._data += '{"index":{"_index":"' + self._ES_INDEX + '","_type":"' + self._GENERAL_CONFIG["RDS_ID"] + '"}}\n'        
-      self._data += json.dumps(doc) + "\n"
+    self._data.append({"index": {
+                         "_index": self._ES_INDEX,
+                         "_type": self._GENERAL_CONFIG["RDS_ID"] }})
+    self._data.append(doc)
 
     self._num_of_total_doc += 1
     if len(self._data) > 100000 or flush:
-      if not self._GENERAL_CONFIG["USING_KEY"]:
-        self._es.bulk(index=self._ES_INDEX, body=self._data, refresh=flush)
-        self._data = list()
-      else:
-        self.send2ES()
+      print("I'll gonna send~!")
+      self._es.bulk(index=self._ES_INDEX, body=self._data, refresh=flush)
 
   def initNewDoc(self, doc, l1, l2, i):
     if l1.startswith("# Time: "):
@@ -348,15 +266,7 @@ class SlowquerySender:
     return doc, i
 
   def run(self):
-    #init
-    if not self._GENERAL_CONFIG["USING_KEY"]:
-      self._data = list()
-    else:
-      self._data = ""
-  
-    now = datetime.now()
-    log_data = self.getRdsSlowQlog(now)
-    #log_data = self.getRdsSlowQlog4Debug("D:/Downloads/mysql-slowquery.log.1")
+    log_data = self.getRdsSlowQlog()
 
     if not log_data:
       print("%s does not exist!" % (self._log_filename))
@@ -364,7 +274,7 @@ class SlowquerySender:
 
     lines = log_data.split("\n")
     if len(lines) > 0:
-      if not self.validateLogDate(now, lines):
+      if not self.validateLogDate(lines):
         print("%s already read log!" % (self._log_filename))
         return -2
     else:
@@ -376,12 +286,8 @@ class SlowquerySender:
     self.initEC2InstancesInVpc(
       self._GENERAL_CONFIG["AWS_EC2_REGION_ID"],
       self._GENERAL_CONFIG["AWS_EC2_VPC_ID"])
-    self.setTargetIndex(now)
-    if not self._GENERAL_CONFIG["USING_KEY"]:
-      
-      self.createTemplateWithoutKey(self._ES_INDEX)
-    else:
-      self.createTemplateWithKey(self._GENERAL_CONFIG["ES_HOST"])
+    self.setTargetIndex()
+    self.createTemplate(self._GENERAL_CONFIG["INDEX_PREFIX"])
     
     print("%s : Ready to write %s in %s" % (str(datetime.now()), self._log_filename, self._ES_INDEX))
     i = 0
@@ -412,10 +318,8 @@ class SlowquerySender:
       else:
         if doc.get("sql"):
           doc["sql"] += "\n" + line
-          doc["fingerprint"] += "\n" + self._fp.abstractQuery(line)
         else:
           doc["sql"] = line
-          doc["fingerprint"] = self._fp.abstractQuery(line)
         self._new_doc = True
 
       i += 1
@@ -425,46 +329,6 @@ class SlowquerySender:
 
     print("Written Slow Queries : %s" % str(self._num_of_total_doc))
     print("last_time : %s" % (self._last_time))
-
-class Fingerprinter():
-  def __init__(self, fp_path):
-    self._SET_TIMESTAMP = "set timestamp="
-    self._USE_DATABASE = "use polariscloud"
-    self._fp_path = fp_path
-
-  def skipFingerprint(self, query):
-    if query.startswith(self._SET_TIMESTAMP):
-      return ""
-    elif query.startswith(self._USE_DATABASE):
-      return ""
-    else:
-      return query
-
-  def abstractQuery(self, query):
-    if not self._fp_path:
-      return query
-
-    cmd = "%s --query '%s'" % (_fp_path, query)
-
-    try:
-      return self.skipFingerprint(subprocess.check_output(cmd, shell=True))
-    except:
-      return query
-
-  def regularizeFingerprint(self, query):
-    SET_TIMESTAMP = "set timestamp=?;\n\n"
-    USE_DATABASE = "use ?\n\n"
-  
-    if SET_TIMESTAMP in query:
-      query = query.replace(SET_TIMESTAMP, "")
-    if USE_DATABASE in query:
-      query = query.replace(USE_DATABASE, "")
-    
-    # Substitue multiple line feed to single line feed.
-    query = re.sub(r"(\n)+", r"\n", query)
-    query = query.strip()
-  
-    return query
 
 class DirectoryManager:
   def __init__(self, path="/var/log"):
@@ -551,7 +415,7 @@ class RawFileRemainer(DirectoryManager):
       os.removedirs(year_dir)
 
   def makeRawLog(self, name, raw_data):
-    cur_date_path = self._raw_path + datetime.now().strftime("/%Y/%m/%d/")
+    cur_date_path = self._raw_path + self._now.strftime("/%Y/%m/%d/")
     raw_name = datetime.now().strftime("%Hh%Mm%Ss_") + name
 
     if not os.path.exists(cur_date_path):

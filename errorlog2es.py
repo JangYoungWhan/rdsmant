@@ -162,13 +162,13 @@ class ErrorlogSender:
     return True
 
   def createTemplate(self, template_name):
-    template_json = {
+    template_body = {
       "template" : "rds_errorlog-*",
       "settings" : {
         "number_of_shards": 1 }
     }
 
-    response = self._es.indices.put_template(name=template_name, body=template_json)
+    response = self._es.indices.put_template(name=template_name, body=template_body)
     if response["acknowledged"]:
       print("Create template success.")
     else:
