@@ -70,6 +70,25 @@ class ErrorlogSender:
 
     self._now = datetime.now()
 
+  def validateLogDate(self, lines):
+    delta = timedelta(hours=2)
+  
+    for line in lines:
+      if not line:
+        continue
+      elif line.startswith("# Time: "):
+        log_time = datetime.strptime(line[8:], "%y%m%d %H:%M:%S")
+        log_time = log_time.replace(tzinfo=tz.tzutc()).astimezone(zoneinfo.gettz(self._GENERAL_CONFIG["TIMEZONE"]))
+        log_time = log_time.replace(tzinfo=None)
+        print(self._now, log_time)
+        print("diff :", self._now - log_time)
+        if (self._now - log_time) > delta:
+          return False
+        else:
+          return True
+      
+    return True
+    
   def initElasticsearchIndex(self):
     self._ES_INDEX = self._GENERAL_CONFIG["INDEX_PREFIX"] + "-" + datetime.strftime(self._now, "%Y.%m")
 
@@ -187,7 +206,9 @@ class ErrorlogSender:
       print("%s is empty!" % (log_filename))
       return -3
 
-    self.initEC2InstancesInVpc(AWS_EC2_REGION_ID, AWS_EC2_VPC_ID)
+    sself.initEC2InstancesInVpc(
+      self._GENERAL_CONFIG["AWS_EC2_REGION_ID"],
+      self._GENERAL_CONFIG["AWS_EC2_VPC_ID"])
     self.createTemplate(self._GENERAL_CONFIG["INDEX_PREFIX"])
 
     print("%s : Ready to write %s in %s" % (str(datetime.now()), log_filename, self._ES_INDEX))
