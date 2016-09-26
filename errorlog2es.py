@@ -9,9 +9,10 @@
 import boto3
 import re
 import os
-import json
+import glob
 import time
 
+from datetime import date
 from datetime import datetime
 from datetime import timedelta
 from dateutil import tz, zoneinfo
@@ -53,6 +54,11 @@ class ErrorlogSender:
       "HOLD_USER_INFO": re.compile("MySQL thread id (\w+), OS thread handle \w+, query id (\d+) ([\d\.]+) (\w+) "),
       "HOLD_LOCK_INFO": re.compile("table `(\w+)`\.`(\w+)` trx id (\d+) lock_mode (\w+)")
       }
+      
+    self._LOG_CONFIG = {
+      "LOG_OUTPUT_DIR": "/var/log/rdslog/errorlog2es.log",
+      "RAW_OUTPUT_DIR": "/var/log/rdslog/errorlog" # (Optional)
+      }
 
     self._ABORTED_CONN_MSG = "Aborted connection"
     self._ACCESS_DENY_MSG = "Access denied"
@@ -64,9 +70,9 @@ class ErrorlogSender:
 
     self._es = Elasticsearch(self._GENERAL_CONFIG["ES_HOST"])
     self._ec2dict = dict()
-    self._last_time = ""
     self._data = list()
     self._num_of_total_doc = 0
+    self._reaminer = RawFileRemainer(self._LOG_CONFIG["RAW_OUTPUT_DIR"])
 
     self._now = datetime.now()
 
@@ -128,6 +134,9 @@ class ErrorlogSender:
 
       log_data += ret["LogFileData"]
       marker = ret["Marker"]
+      
+    self._reaminer.clearOutOfDateRawFiles()
+    self._reaminer.makeRawLog("mysql-error.log." + str(datetime.now().utcnow().hour), log_data)
 
     return log_data
 
@@ -175,7 +184,6 @@ class ErrorlogSender:
       print("Create template failed.")
 
   def appendDoc2Data(self, doc, flush=False):
-    doc["timestamp"] = self._last_time
     self._data.append({"index": {
                          "_index": self._ES_INDEX,
                          "_type": self._GENERAL_CONFIG["RDS_ID"] }})
@@ -223,7 +231,6 @@ class ErrorlogSender:
 
       if doc:
         self.appendDoc2Data(doc)
-        doc = {}
 
       doc = {}
       m = self._REGEX4REFINE["GENERAL_ERR"].match(line)
@@ -315,13 +322,108 @@ class ErrorlogSender:
       i += 1
 
     if doc:
-      doc["timestamp"] = self._last_time
       print("%s : Write last data that length is %s (%s)" % (str(datetime.now()), len(self._data), len(doc)))
       self.appendDoc2Data(doc, flush=True)
 
     print("Written Errorlogs : %s" % str(self._num_of_total_doc))
-    print("last_time : %s" % (self._last_time))
 
+
+class DirectoryManager:
+  def __init__(self, path="/var/log"):
+    self._raw_path = path
+
+  def readInputPath(self, input_path):
+    input_files = list()
+
+    if os.path.isfile(input_path):
+      self.input_files.append(input_path)
+    else:
+      for (dirpath, dirnames, filelist) in os.walk(input_path):
+        for fname in filelist:
+          self.input_files.extend(fname)
+    return input_files
+
+  def readDatePath(self, date_path):
+    date_file_list = glob.glob(date_path + "/[0-9]*/[0-9]*/[0-9]*")
+    date_path_list = filter(lambda d: os.path.isdir(d), date_file_list)
+
+    return map(self.regularizePath, date_path_list)
+
+  def regularizePath(self, s):
+    return re.sub("[\\\|/]+", "/", s)
+
+  def mkdir(self, path):
+    if not os.path.exists(path):
+      os.makedirs(path)
+
+  def rmdir(self, path):
+    # It prevents from deleting all your disk files.
+    if path == "/" or not os.path.exists(path):
+      return False
+
+    for root, dirs, files in os.walk(path, topdown=False):
+      for name in files:
+        print('remove: ' + os.path.join(root, name))
+        os.remove(os.path.join(root, name))
+      for name in dirs:
+        print('removedir: ' + os.path.join(root, name))
+        os.removedirs(os.path.join(root, name))
+    return True
+
+  def isEmptyDir(self, dir):
+    if os.path.exists(dir) and os.listdir(dir) == []:
+      return True
+    else:
+      return False
+
+
+class RawFileRemainer(DirectoryManager):
+  def __init__(self, path):
+    DirectoryManager.__init__(self, path)
+    self._due_date = timedelta(weeks=2)
+
+  def clearOutOfDateRawFiles(self):
+    target = self.readDatePath(self._raw_path)
+
+    for t in target:
+      sp = t.split("/")
+      if self.isOutOfDate(int(sp[-3]), int(sp[-2]), int(sp[-1])):
+        print("delete : " + t)
+        self.rmdirRecursively(t)
+
+  def isOutOfDate(self, year, month, day):
+    target = date(year, month, day)
+    if (date.today() - target) > self._due_date:
+      return True
+    else:
+      return False
+
+  def rmdirRecursively(self, target_dir):
+    self.rmdir(target_dir)
+
+    if self.isEmptyDir(target_dir):
+      print("removedirs!: " + target_dir)
+      os.removedirs(target_dir)
+    month_dir = target_dir[:-3]
+    if self.isEmptyDir(month_dir):
+      print("isEmptyDir!: " + month_dir)
+      os.removedirs(month_dir)
+    year_dir = target_dir[:-6]
+    if self.isEmptyDir(year_dir):
+      print("isEmptyDir!: " + year_dir)
+      os.removedirs(year_dir)
+
+  def makeRawLog(self, name, raw_data):
+    cur_date_path = self._raw_path + datetime.now().strftime("/%Y/%m/%d/")
+    raw_name = datetime.now().strftime("%Hh%Mm%Ss_") + name
+
+    if not os.path.exists(cur_date_path):
+      self.mkdir(cur_date_path)
+    f = open(cur_date_path + raw_name, "w")
+    f.write(raw_data)
+    f.close()
+    
+    
 if __name__ == '__main__':
   el2es = ErrorlogSender()
   el2es.run()

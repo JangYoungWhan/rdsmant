@@ -7,8 +7,6 @@
 # Copyright 2016, YW. Jang, All rights reserved.
 
 import boto3
-import json
-import subprocess
 import glob
 import os
 import re
@@ -52,11 +50,10 @@ class SlowquerySender:
 
     self._LOG_CONFIG = {
       "LOG_OUTPUT_DIR": "/var/log/rdslog/slowquery2es.log",
-      "RAW_OUTPUT_DIR": "/var/log/raw_rdslog/raw_slowquery" # (Optional)
+      "RAW_OUTPUT_DIR": "/var/log/rdslog/slowquery" # (Optional)
       }
 
     self._es = Elasticsearch(self._GENERAL_CONFIG["ES_HOST"])
-    self._log_filename = "NONE"
     self._ec2dict = dict()
     self._last_time = ""
     self._data = list()
@@ -67,12 +64,11 @@ class SlowquerySender:
     self._reaminer = RawFileRemainer(self._LOG_CONFIG["RAW_OUTPUT_DIR"])
 
   # Get raw data.
-  def getRdsSlowQlog(self):
+  def getRdsSlowQlog(self, log_filename):
     client = boto3.client("rds", region_name=self._GENERAL_CONFIG["AWS_RDS_REGION_ID"])
     db_files = client.describe_db_log_files(DBInstanceIdentifier=self._GENERAL_CONFIG["RDS_ID"])
-
-    self._log_filename = self._SLOWQUERYLOG_PREFIX + str((self._now.utcnow()).hour)
-    if not filter(lambda log: log["LogFileName"] == self._log_filename, db_files["DescribeDBLogFiles"]):
+    
+    if not filter(lambda log: log["LogFileName"] == log_filename, db_files["DescribeDBLogFiles"]):
       return ""
 
     marker = "0"
@@ -81,7 +77,7 @@ class SlowquerySender:
     # It used like do-while statement.
     ret = client.download_db_log_file_portion(
         DBInstanceIdentifier=self._GENERAL_CONFIG["RDS_ID"],
-        LogFileName=self._log_filename,
+        LogFileName=log_filename,
         Marker=marker,
         NumberOfLines=500)
     log_data = ret["LogFileData"]
@@ -90,7 +86,7 @@ class SlowquerySender:
     while ret["AdditionalDataPending"]:
       ret = client.download_db_log_file_portion(
         DBInstanceIdentifier=self._GENERAL_CONFIG["RDS_ID"],
-        LogFileName=self._log_filename,
+        LogFileName=log_filename,
         Marker=marker,
         NumberOfLines=500)
       print("keep going...")
@@ -100,7 +96,7 @@ class SlowquerySender:
 
     # Delete old log files.
     self._reaminer.clearOutOfDateRawFiles()
-    self._reaminer.makeRawLog("mysql-slowquery.log." + str((self._now.utcnow()).hour), log_data)
+    self._reaminer.makeRawLog("mysql-slowquery.log." + str((datetime.now().utcnow()).hour), log_data)
 
     return log_data
 
@@ -266,19 +262,20 @@ class SlowquerySender:
     return doc, i
 
   def run(self):
-    log_data = self.getRdsSlowQlog()
+    log_filename = self._SLOWQUERYLOG_PREFIX + str((self._now.utcnow()).hour)
+    log_data = self.getRdsSlowQlog(log_filename)
 
     if not log_data:
-      print("%s does not exist!" % (self._log_filename))
+      print("%s does not exist!" % (log_filename))
       return -1
 
     lines = log_data.split("\n")
     if len(lines) > 0:
       if not self.validateLogDate(lines):
-        print("%s already read log!" % (self._log_filename))
+        print("%s already read log!" % (log_filename))
         return -2
     else:
-      print("%s is empty!" % (self._log_filename))
+      print("%s is empty!" % (log_filename))
       return -3
     
     # Get ready for extracting log file.
@@ -289,7 +286,7 @@ class SlowquerySender:
     self.setTargetIndex()
     self.createTemplate(self._GENERAL_CONFIG["INDEX_PREFIX"])
     
-    print("%s : Ready to write %s in %s" % (str(datetime.now()), self._log_filename, self._ES_INDEX))
+    print("%s : Ready to write %s in %s" % (str(datetime.now()), log_filename, self._ES_INDEX))
     i = 0
     doc = {}
 
