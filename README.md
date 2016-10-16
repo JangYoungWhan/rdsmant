@@ -5,11 +5,16 @@ rdsmant stands for RDS MANagement Tool
 ##Prerequisites
 
 - Python version 2.7 or greater.
-- boto3
-- PyYaml
-- pt-fingerprint (percona fingerprint tool)
+- pip install (boto3, PyYaml, Elasticsearch)
 
 ##Getting Started
+
+
+```bash
+# Install python modules.
+sudo pip install pyyaml
+sudo pip install elasticsearch
+```
 
 ```bash
 # Register crontab for every 10 min.
