@@ -2,10 +2,20 @@ import boto3
 import datetime
 
 
+rds_endpoint = (
+    {
+        "id" : "tb-test",
+        "region": "ap-northeast-1"
+    },
+    {
+        "id": "tb-test2",
+        "region": "ap-northeast-2"
+    }
+)
+
+
 class RdsDailyReporter:
     def __init__(self):
-        self._client = boto3.client("cloudwatch", region_name = "ap-northeast-2")
-
         # There is a reference in below.
         # http://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/rds-metricscollected.html
         self._target_metric_map = {
@@ -49,10 +59,10 @@ class RdsDailyReporter:
         )
         return response
 
-    def getTargetRdsStatistics(self):
+    def getTargetRdsStatistics(self, rds_id, region):
+        self._client = boto3.client("cloudwatch", region_name=region)
         for m in self._target_metric_map.keys():
-            #print("get..." + self._target_metric_map[m])
-            result = self.getRdsMetrics("tb-test", m)
+            result = self.getRdsMetrics(rds_id, m)
             if len(result["Datapoints"]) > 0:
                 v = result["Datapoints"][0]["Maximum"]
                 u = self._target_metric_map[m]
@@ -66,5 +76,10 @@ class RdsDailyReporter:
 
 if __name__ == "__main__":
     reporter = RdsDailyReporter()
-    reporter.getTargetRdsStatistics()
 
+    for rds in rds_endpoint:
+        rds_id = rds["id"]
+        region = rds["region"]
+        print("Get status of %s in %s." %(rds_id, region))
+        reporter.getTargetRdsStatistics(rds_id, region)
+        print("==============")
