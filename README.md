@@ -25,7 +25,7 @@ sudo pip install elasticsearch
 python2.7 rdschker.py
 
 # Report daily RDS status.
-# I'm sorry, It's in prepration...
+# I'm sorry, It's in preparation...
 
 ```
 
