@@ -64,12 +64,14 @@ class RdsDailyReporter:
         for m in self._target_metric_map.keys():
             result = self.getRdsMetrics(rds_id, m)
             if len(result["Datapoints"]) > 0:
-                v = result["Datapoints"][0]["Maximum"]
+				datapoint = max(result["Datapoints"], key=lambda x: x["Maximum"])
+                v = datapoint["Maximum"]
+				t = datapoint["Timestamp"]
                 u = self._target_metric_map[m]
                 if m in self._scale:
                     v = v * self._scale[m][0]
                     u = self._scale[m][1]
-                print("[%s]\t: %0.6f %s" % (m, v, u))
+                print("[%s]\t: %0.6f %s (%s)" % (m, v, u, t))
             else:
                 print("[%s]\t: %0.6f %s" % (m, 0, self._target_metric_map[m]))
 
