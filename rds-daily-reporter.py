@@ -1,3 +1,14 @@
+#-*- coding: utf-8 -*-
+
+# Project   : Report RDS status based on cloudwatch metrics with time range.
+# Author    : YW. Jang
+# Date      : 2016.12.12
+#
+# Copyright 2016, YW. Jang, All rights reserved.
+
+import argparse
+import sys
+
 import boto3
 import datetime
 
@@ -5,7 +16,7 @@ import datetime
 rds_endpoint = (
     {
         "id" : "tb-test",
-        "region": "ap-northeast-1"
+        "region": "ap-northeast-2"
     },
     {
         "id": "tb-test2",
@@ -41,6 +52,17 @@ class RdsDailyReporter:
             "WriteThroughput": [1/(1024*1024), "MB/s"],
         }
 
+        self._from = datetime.datetime.utcnow() - datetime.timedelta(days=1)
+        self._to = datetime.datetime.utcnow()
+
+    def setDateRange(self, begin, end):
+        self._from = self.buildDateTime(int(begin[0:4]), int(begin[4:6]), int(begin[6:8]))
+        self._to = self.buildDateTime(int(end[0:4]), int(end[4:6]), int(end[6:8]))
+
+    def buildDateTime(self, year, month, day, h=0, m=0, s=0):
+        return datetime.datetime(year=year, month=month, day=day,
+                                 hour=h, minute=m, second=s)
+
     def getRdsMetrics(self, rds_id, metric):
         response = self._client.get_metric_statistics(
             Namespace = "AWS/RDS",
@@ -64,9 +86,10 @@ class RdsDailyReporter:
         for m in self._target_metric_map.keys():
             result = self.getRdsMetrics(rds_id, m)
             if len(result["Datapoints"]) > 0:
-				datapoint = max(result["Datapoints"], key=lambda x: x["Maximum"])
+                datapoint = max(result["Datapoints"], key=lambda x: x["Maximum"])
                 v = datapoint["Maximum"]
-				t = datapoint["Timestamp"]
+                t = datapoint["Timestamp"]
+                #v = result["Datapoints"][0]["Maximum"]
                 u = self._target_metric_map[m]
                 if m in self._scale:
                     v = v * self._scale[m][0]
@@ -79,7 +102,19 @@ class RdsDailyReporter:
 if __name__ == "__main__":
     reporter = RdsDailyReporter()
 
-    for rds in rds_endpoint:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-b", "--begin ", dest="begin", help="from", type=str, required=True)
+    parser.add_argument("-e", "--end ", dest="end", help="to", type=str, required=True)
+
+    try:
+        args = parser.parse_args()
+        reporter.setDateRange(args.begin, args.end)
+    except Exception as e:
+        parser.print_help()
+        print(e)
+        sys.exit(0)
+
+    for rds in rds_endpoint[0:-1]:
         rds_id = rds["id"]
         region = rds["region"]
         print("Get status of %s in %s." %(rds_id, region))
