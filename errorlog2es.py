@@ -336,11 +336,11 @@ class DirectoryManager:
     input_files = list()
 
     if os.path.isfile(input_path):
-      self.input_files.append(input_path)
+      input_files.append(input_path)
     else:
       for (dirpath, dirnames, filelist) in os.walk(input_path):
         for fname in filelist:
-          self.input_files.extend(fname)
+          input_files.extend(dirpath + "/" + fname)
     return input_files
 
   def readDatePath(self, date_path):
