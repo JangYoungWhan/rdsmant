@@ -2,12 +2,12 @@
 rdsmant stands for RDS MANagement Tool
 
 
-##Prerequisites
+## Prerequisites
 
 - Python version 2.7 or greater.
 - pip install (boto3, PyYaml, Elasticsearch)
 
-##Getting Started
+## Getting Started
 
 
 ```bash
@@ -44,6 +44,6 @@ Get status of tb-test in ap-northeast-2.
 
 ```
 
-##Contact
+## Contact
 
 [stdjangyoungwhan@gmail.com](https://github.com/JangYoungWhan)
